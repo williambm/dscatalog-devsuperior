@@ -5,6 +5,7 @@ import com.devsuperior.dscatalog.services.ProductService;
 import com.devsuperior.dscatalog.services.exceptions.DatabaseException;
 import com.devsuperior.dscatalog.services.exceptions.ResourceNotFoundException;
 import com.devsuperior.dscatalog.tests.Factory;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,14 +43,16 @@ public class ProductResourceTests {
     private long existingId;
     private long nomExistingId;
     private long dependentId;
+    private String jsonBody;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws JsonProcessingException {
         existingId = 1L;
         nomExistingId = 1002L;
         dependentId = 3L;
         productDTO = Factory.createProductDTO();
         page = new PageImpl<>(List.of(productDTO));
+        jsonBody = objectMapper.writeValueAsString(productDTO);
 
         when(service.findAllPaged(any())).thenReturn(page);
 
@@ -62,6 +65,8 @@ public class ProductResourceTests {
         doNothing().when(service).delete(existingId);
         doThrow(ResourceNotFoundException.class).when(service).delete(nomExistingId);
         doThrow(DatabaseException.class).when(service).delete(dependentId);
+
+        when(service.insert(any())).thenReturn(productDTO);
     }
 
     @Test
@@ -114,8 +119,6 @@ public class ProductResourceTests {
     @Test
     public void updateShouldReturnNotFoundWhenIdDoesNotExists() throws Exception {
 
-        String jsonBody = objectMapper.writeValueAsString(productDTO);
-
         ResultActions resultActions =
                 mockMvc.perform(MockMvcRequestBuilders
                         .put("/products/{id}", nomExistingId)
@@ -124,5 +127,38 @@ public class ProductResourceTests {
                         .accept(MediaType.APPLICATION_JSON));
 
         resultActions.andExpect(status().isNotFound());
+    }
+
+    @Test
+    public void deleteShouldReturnNoContentWhenIdExists() throws Exception {
+
+        ResultActions resultActions =
+                mockMvc.perform(MockMvcRequestBuilders
+                        .delete("/products/{id}", existingId));
+
+        resultActions.andExpect(status().isNoContent());
+    }
+
+    @Test
+    public void deleteShouldReturnNotFoundWhenIdDoesNotExists() throws Exception {
+
+        ResultActions resultActions =
+                mockMvc.perform(MockMvcRequestBuilders
+                        .delete("/products/{id}", nomExistingId));
+
+        resultActions.andExpect(status().isNotFound());
+    }
+
+    @Test
+    public void insertShouldReturnProductDTOAndStatusCreatedWhenIdExists() throws Exception {
+
+        ResultActions resultActions =
+                mockMvc.perform(MockMvcRequestBuilders
+                        .post("/products", existingId)
+                        .content(jsonBody)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .contentType(MediaType.APPLICATION_JSON));
+
+        resultActions.andExpect(status().isCreated());
     }
 }
