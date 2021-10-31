@@ -2,8 +2,10 @@ package com.devsuperior.dscatalog.resources;
 
 import com.devsuperior.dscatalog.dto.ProductDTO;
 import com.devsuperior.dscatalog.services.ProductService;
+import com.devsuperior.dscatalog.services.exceptions.DatabaseException;
 import com.devsuperior.dscatalog.services.exceptions.ResourceNotFoundException;
 import com.devsuperior.dscatalog.tests.Factory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +20,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,15 +34,20 @@ public class ProductResourceTests {
     @MockBean
     private ProductService service;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     private PageImpl<ProductDTO> page;
     private ProductDTO productDTO;
     private long existingId;
     private long nomExistingId;
+    private long dependentId;
 
     @BeforeEach
     void setUp() {
-        existingId = 1l;
-        nomExistingId = 1002l;
+        existingId = 1L;
+        nomExistingId = 1002L;
+        dependentId = 3L;
         productDTO = Factory.createProductDTO();
         page = new PageImpl<>(List.of(productDTO));
 
@@ -47,6 +55,13 @@ public class ProductResourceTests {
 
         when(service.findById(existingId)).thenReturn(productDTO);
         when(service.findById(nomExistingId)).thenThrow(ResourceNotFoundException.class);
+
+        when(service.update(eq(existingId), any())).thenReturn(productDTO);
+        when(service.update(eq(nomExistingId), any())).thenThrow(ResourceNotFoundException.class);
+
+        doNothing().when(service).delete(existingId);
+        doThrow(ResourceNotFoundException.class).when(service).delete(nomExistingId);
+        doThrow(DatabaseException.class).when(service).delete(dependentId);
     }
 
     @Test
@@ -74,6 +89,39 @@ public class ProductResourceTests {
     public void findByIdShouldReturnNotFoundWhenIdDoesNotExists() throws Exception {
         ResultActions resultActions =
                 mockMvc.perform(MockMvcRequestBuilders.get("/products/{id}", nomExistingId));
+
+        resultActions.andExpect(status().isNotFound());
+    }
+
+    @Test
+    public void updateShouldReturnProductDTOWhenIdExists() throws Exception {
+
+        String jsonBody = objectMapper.writeValueAsString(productDTO);
+
+        ResultActions resultActions =
+                mockMvc.perform(MockMvcRequestBuilders
+                        .put("/products/{id}", existingId)
+                        .content(jsonBody)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON));
+
+        resultActions.andExpect(status().isOk());
+        resultActions.andExpect(jsonPath("$.id").exists());
+        resultActions.andExpect(jsonPath("$.name").exists());
+        resultActions.andExpect(jsonPath("$.description").exists());
+    }
+
+    @Test
+    public void updateShouldReturnNotFoundWhenIdDoesNotExists() throws Exception {
+
+        String jsonBody = objectMapper.writeValueAsString(productDTO);
+
+        ResultActions resultActions =
+                mockMvc.perform(MockMvcRequestBuilders
+                        .put("/products/{id}", nomExistingId)
+                        .content(jsonBody)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON));
 
         resultActions.andExpect(status().isNotFound());
     }
